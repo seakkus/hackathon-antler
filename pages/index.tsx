@@ -2,12 +2,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import WordCloud from "react-d3-cloud";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+
+import { Loader2 } from "lucide-react";
 
 // Mock function for API call - replace with actual API call in production
 const analyzeEmails = async (emails: string) => {
@@ -39,113 +41,132 @@ const generateContent = async (prompt: string, style: string) => {
   return `Here's a generated response in the style of your emails: ${prompt}`;
 };
 
+const tones = ["dominant", "secondary", "tertiary"];
+
+const toUpperCase = (str: string) => str.charAt(0).toUpperCase() + str.slice(1);
+
 const EmailAnalysisApp = () => {
   const [emails, setEmails] = useState("");
   const [wordCloudData, setWordCloudData] = useState<any>([]);
   const [toneAnalysis, setToneAnalysis] = useState<any>(null);
   const [prompt, setPrompt] = useState("");
-  const [generatedContent, setGeneratedContent] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+  const [generatedResponse, setGeneratedResponse] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [isGenerating, setIsGenerating] = useState(false);
 
-  const handleAnalyze = async () => {
-    setIsLoading(true);
-    try {
-      const result: any = await analyzeEmails(emails);
-      setWordCloudData(result.wordCloudData);
-      setToneAnalysis(result.toneAnalysis);
-    } catch (error) {
-      console.error("Error analyzing emails:", error);
-    }
-    setIsLoading(false);
-  };
+  useEffect(() => {
+    // request to api/prompt post endpoint
+    const data: any = fetch("/api/prompt", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    })
+      .then((response) => response.json())
+      .then((data) => {
+        setWordCloudData(data.data.wordCloudData);
+        setToneAnalysis(data.data.toneAnalysis);
 
-  const handleGenerate = async () => {
-    setIsLoading(true);
+        setTimeout(() => {
+          generateResponseEmail();
+        }, 5000);
+      })
+      .catch((error) => {
+        console.error("Error:", error);
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
+  }, []);
+
+  const generateResponseEmail = async () => {
+    setIsGenerating(true);
     try {
-      const content = await generateContent(prompt, emails);
-      setGeneratedContent(content);
+      const data: any = fetch("/api/prompt", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          style: {
+            commonWords: wordCloudData,
+            toneAnalysis: toneAnalysis,
+          },
+        }),
+      })
+        .then((response) => response.json())
+        .then((data) => {
+          setGeneratedResponse(data.response.response);
+        })
+        .catch((error) => {
+          console.error("Error:", error);
+        })
+        .finally(() => {
+          setIsGenerating(false);
+        });
     } catch (error) {
       console.error("Error generating content:", error);
     }
     setIsLoading(false);
   };
 
-  const fontSizeMapper = (word: any) => Math.log2(word.value) * 10;
-  const rotate = (word: any) => Math.random() * 90;
+  if (isLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center space-y-2 p-8">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p className="text-lg font-medium text-primary">
+          Retrieving & analyzing emails...
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="container mx-auto p-4 space-y-6">
-      <h1 className="text-2xl font-bold mb-4">Email Analysis App</h1>
+      <div className="w-full grid grid-cols-2 gap-10 items-center">
+        {wordCloudData.length > 0 && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Your Popular Words</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <WordCloud height={300} width={600} data={wordCloudData} />
+            </CardContent>
+          </Card>
+        )}
+
+        {toneAnalysis && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Your Tone Analysis</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {tones.map((tone: any) => (
+                <div key={tone} className="flex items-center gap-2">
+                  <strong>{toUpperCase(tone)} Tone:</strong>{" "}
+                  <p style={{ color: toneAnalysis[tone].color }}>
+                    {toneAnalysis[tone].value}
+                  </p>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+        )}
+      </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Email Input</CardTitle>
+          <CardTitle>
+            <div className="flex items-center justify-between">
+              <span>Waiting for Email</span>
+              {!generatedResponse && (
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              )}
+            </div>
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          <Textarea
-            placeholder="Paste your emails here..."
-            value={emails}
-            onChange={(e) => setEmails(e.target.value)}
-            className="w-full h-40"
-          />
-          <Button onClick={handleAnalyze} disabled={isLoading} className="mt-2">
-            {isLoading ? "Analyzing..." : "Analyze Emails"}
-          </Button>
-        </CardContent>
-      </Card>
-
-      {wordCloudData.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Word Cloud</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div style={{ height: "400px" }}>
-              <WordCloud data={wordCloudData} />
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {toneAnalysis && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Tone Analysis</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p>
-              <strong>Dominant Tone:</strong> {toneAnalysis.dominant}
-            </p>
-            <p>
-              <strong>Secondary Tone:</strong> {toneAnalysis.secondary}
-            </p>
-            <p>
-              <strong>Tertiary Tone:</strong> {toneAnalysis.tertiary}
-            </p>
-          </CardContent>
-        </Card>
-      )}
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Generate Content in Your Style</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Input
-            placeholder="Enter your prompt here..."
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            className="w-full mb-2"
-          />
-          <Button onClick={handleGenerate} disabled={isLoading || !emails}>
-            {isLoading ? "Generating..." : "Generate Content"}
-          </Button>
-          {generatedContent && (
-            <div className="mt-4 p-4 bg-gray-100 rounded">
-              <h3 className="font-bold mb-2">Generated Content:</h3>
-              <p>{generatedContent}</p>
-            </div>
-          )}
+          <div dangerouslySetInnerHTML={{ __html: generatedResponse }} />
         </CardContent>
       </Card>
     </div>
